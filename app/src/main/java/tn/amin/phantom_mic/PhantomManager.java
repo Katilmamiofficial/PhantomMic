@@ -7,6 +7,8 @@ import android.content.Intent;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.ParcelFileDescriptor;
 import android.provider.DocumentsContract;
 import android.widget.Toast;
@@ -27,6 +29,13 @@ public class PhantomManager {
     private static final String DEFAULT_RECORDINGS_PATH = "Recordings";
 
     private static final String KEY_INTENT_FILE = "tn.amin.phantom_mic.AUDIO_FILE";
+
+    private static void safeToast(Context context, String message, int duration) {
+        if (context == null) return;
+        new Handler(Looper.getMainLooper()).post(() ->
+            Toast.makeText(context, message, duration).show()
+        );
+    }
 
     private static final String FILE_CONFIG = "phantom.txt";
 
@@ -80,7 +89,7 @@ public class PhantomManager {
             }
 
             ActivityResultWrapper arWrapper = new ActivityResultWrapper(activity, REQUEST_CODE);
-            Toast.makeText(mContext.get(), "PhantomMic: Chose recordings folder", Toast.LENGTH_LONG).show();
+            safeToast(mContext.get(), "PhantomMic: Chose recordings folder", Toast.LENGTH_LONG);
             arWrapper.start(intent, (resultCode, resultData) -> {
                 if (resultCode == Activity.RESULT_OK) {
                     if (resultData != null && resultData.getData() != null) {
@@ -127,7 +136,7 @@ public class PhantomManager {
         FileDescriptor fd = mFileManager.openAudioWithName(mUriPath, fileName.trim());
 
         if (fd == null) {
-            Toast.makeText(mContext.get(), "Could not open file", Toast.LENGTH_SHORT).show();
+            safeToast(mContext.get(), "Could not open file", Toast.LENGTH_SHORT);
             return;
         }
 
@@ -139,7 +148,7 @@ public class PhantomManager {
     private void ensureHasUriPath() {
         if (mUriPath == null) {
             mUriPath = Uri.fromFile(new File(mContext.get().getExternalFilesDir(null), DEFAULT_RECORDINGS_PATH));
-            Toast.makeText(mContext.get(), "[E] Defaulting to " + mUriPath.getPath(), Toast.LENGTH_SHORT).show();
+            safeToast(mContext.get(), "[E] Defaulting to " + mUriPath.getPath(), Toast.LENGTH_SHORT);
         }
     }
 
