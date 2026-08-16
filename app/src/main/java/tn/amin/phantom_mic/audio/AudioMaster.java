@@ -22,18 +22,17 @@ public class AudioMaster {
     private static final int TIMEOUT_MS = 1000;
 
     private AudioFormat mOutFormat;
-    private volatile boolean mIsLoading = false;
+    private boolean mIsLoading = false;
 
     private final ExecutorService audioLoadExecutor = Executors.newSingleThreadExecutor();
 
-    public synchronized void load(FileDescriptor fd) {
+    public void load(FileDescriptor fd) {
         if (mIsLoading) {
             Logger.d("Still loading another audio, aborting");
             return;
         }
 
         mIsLoading = true;
-        mResampler = null;
 
         MediaExtractor extractor = new MediaExtractor();
 
@@ -45,7 +44,6 @@ public class AudioMaster {
             String mimeType = format.getString(MediaFormat.KEY_MIME);
             if (mimeType == null) {
                 Logger.d("mimeType cannot be null");
-                mIsLoading = false;
                 return;
             }
 
@@ -55,12 +53,11 @@ public class AudioMaster {
 
             audioLoadExecutor.execute(() -> loadData(codec, format, extractor));
         } catch (IOException e) {
-            mIsLoading = false;
             throw new RuntimeException(e);
         }
     }
 
-    public synchronized void unload() {
+    public void unload() {
         mIsLoading = false;
         try {
             //noinspection ResultOfMethodCallIgnored
@@ -126,12 +123,6 @@ public class AudioMaster {
         onLoadDone();
     }
 
-    private Resampler mResampler;
-    private ResamplerChannel mLastInChannel;
-    private ResamplerChannel mLastOutChannel;
-    private int mLastInRate = -1;
-    private int mLastOutRate = -1;
-
     private void processInBuffer(MediaFormat source, byte[] bufferChunk) {
         if (bufferChunk.length == 0) {
             return;
@@ -150,26 +141,18 @@ public class AudioMaster {
         else
             outChannel = ResamplerChannel.STEREO;
 
-        int inRate = source.getInteger(MediaFormat.KEY_SAMPLE_RATE);
-        int outRate = mOutFormat.getSampleRate();
+        ResamplerConfiguration configuration = new ResamplerConfiguration(ResamplerQuality.BEST, inChannel,
+                source.getInteger(MediaFormat.KEY_SAMPLE_RATE), outChannel, mOutFormat.getSampleRate());
+//        if (mBuffer.size()) {
+//            Logger.d(configuration.toString());
+//        }
 
-        boolean needsNewResampler = mResampler == null
-                || inChannel != mLastInChannel
-                || outChannel != mLastOutChannel
-                || inRate != mLastInRate
-                || outRate != mLastOutRate;
+        Resampler resampler = new Resampler(configuration);
+        byte[] resampledChunk = resampler.resample(bufferChunk);
 
-        if (needsNewResampler) {
-            ResamplerConfiguration configuration = new ResamplerConfiguration(ResamplerQuality.BEST, inChannel,
-                    inRate, outChannel, outRate);
-            mResampler = new Resampler(configuration);
-            mLastInChannel = inChannel;
-            mLastOutChannel = outChannel;
-            mLastInRate = inRate;
-            mLastOutRate = outRate;
-        }
-
-        byte[] resampledChunk = mResampler.resample(bufferChunk);
+//        if (mBuffer.size() == 0) {
+//            Logger.d("Resampling done for first chunk (" + resampledChunk.length + ")");
+//        }
 
         onBufferChunkLoaded(resampledChunk);
     }
