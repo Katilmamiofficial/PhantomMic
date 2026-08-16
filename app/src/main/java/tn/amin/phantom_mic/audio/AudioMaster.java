@@ -22,11 +22,11 @@ public class AudioMaster {
     private static final int TIMEOUT_MS = 1000;
 
     private AudioFormat mOutFormat;
-    private boolean mIsLoading = false;
+    private volatile boolean mIsLoading = false;
 
     private final ExecutorService audioLoadExecutor = Executors.newSingleThreadExecutor();
 
-    public void load(FileDescriptor fd) {
+    public synchronized void load(FileDescriptor fd) {
         if (mIsLoading) {
             Logger.d("Still loading another audio, aborting");
             return;
@@ -45,6 +45,7 @@ public class AudioMaster {
             String mimeType = format.getString(MediaFormat.KEY_MIME);
             if (mimeType == null) {
                 Logger.d("mimeType cannot be null");
+                mIsLoading = false;
                 return;
             }
 
@@ -54,11 +55,12 @@ public class AudioMaster {
 
             audioLoadExecutor.execute(() -> loadData(codec, format, extractor));
         } catch (IOException e) {
+            mIsLoading = false;
             throw new RuntimeException(e);
         }
     }
 
-    public void unload() {
+    public synchronized void unload() {
         mIsLoading = false;
         try {
             //noinspection ResultOfMethodCallIgnored
@@ -151,7 +153,6 @@ public class AudioMaster {
         int inRate = source.getInteger(MediaFormat.KEY_SAMPLE_RATE);
         int outRate = mOutFormat.getSampleRate();
 
-        
         boolean needsNewResampler = mResampler == null
                 || inChannel != mLastInChannel
                 || outChannel != mLastOutChannel
