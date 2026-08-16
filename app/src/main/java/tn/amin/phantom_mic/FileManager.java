@@ -127,7 +127,7 @@ public class FileManager {
                     for (File file : files) {
                         if (file.isFile()) {
                             String nameWithoutExtension = file.getName().replaceFirst("[.][^.]+$", "");
-                            if (nameWithoutExtension.equals(fileName)) {
+                            if (nameWithoutExtension.equals(fileName) || file.getName().equals(fileName)) {
                                 return Uri.fromFile(file);
                             }
                         }
