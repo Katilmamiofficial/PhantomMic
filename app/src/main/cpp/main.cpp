@@ -41,10 +41,24 @@ int acc_offset = 0;
 int32_t (*obtainBuffer_backup)(void*, void*, void*, void*, void*);
 int32_t  obtainBuffer_hook(void* v0, void* v1, void* v2, void* v3, void* v4) {
     int32_t status = obtainBuffer_backup(v0, v1, v2, v3, v4);
+
+    if (v1 == nullptr) {
+        return status;
+    }
+
     size_t frameCount = * (size_t*) v1;
     size_t size = * (size_t*) ((uintptr_t) v1 + sizeof(size_t));
+
+    if (frameCount == 0 || size == 0) {
+        return status;
+    }
+
     size_t frameSize = size / frameCount;
     char* raw = * (char**) ((uintptr_t) v1 + sizeof(size_t) * 2);
+
+    if (raw == nullptr) {
+        return status;
+    }
 
     if (g_phantomBridge->overwrite_buffer(raw, size) && need_log > 0) {
         LOGI("Overwritten data");
@@ -169,7 +183,7 @@ Java_tn_amin_phantom_1mic_PhantomManager_nativeHook(JNIEnv *env, jobject thiz) {
 
     hook_func((void*) obtainBuffer_symbol, (void*) obtainBuffer_hook, (void**) &obtainBuffer_backup);
     hook_func((void*) stop_symbol, (void*) stop_hook, (void**) &stop_backup);
-    
+
     if (get_sdk_int() >= 33 /* Android 13 (Tiramisu) */) {
         LOGI("Using modern (Android 13+) AudioRecord::set ABI");
         hook_func((void*) set_symbol, (void*) set_hook, (void**) &set_backup);
