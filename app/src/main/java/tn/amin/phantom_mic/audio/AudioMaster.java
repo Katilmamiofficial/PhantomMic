@@ -33,6 +33,7 @@ public class AudioMaster {
         }
 
         mIsLoading = true;
+        mResampler = null;
 
         MediaExtractor extractor = new MediaExtractor();
 
@@ -123,6 +124,12 @@ public class AudioMaster {
         onLoadDone();
     }
 
+    private Resampler mResampler;
+    private ResamplerChannel mLastInChannel;
+    private ResamplerChannel mLastOutChannel;
+    private int mLastInRate = -1;
+    private int mLastOutRate = -1;
+
     private void processInBuffer(MediaFormat source, byte[] bufferChunk) {
         if (bufferChunk.length == 0) {
             return;
@@ -141,18 +148,27 @@ public class AudioMaster {
         else
             outChannel = ResamplerChannel.STEREO;
 
-        ResamplerConfiguration configuration = new ResamplerConfiguration(ResamplerQuality.BEST, inChannel,
-                source.getInteger(MediaFormat.KEY_SAMPLE_RATE), outChannel, mOutFormat.getSampleRate());
-//        if (mBuffer.size()) {
-//            Logger.d(configuration.toString());
-//        }
+        int inRate = source.getInteger(MediaFormat.KEY_SAMPLE_RATE);
+        int outRate = mOutFormat.getSampleRate();
 
-        Resampler resampler = new Resampler(configuration);
-        byte[] resampledChunk = resampler.resample(bufferChunk);
+        
+        boolean needsNewResampler = mResampler == null
+                || inChannel != mLastInChannel
+                || outChannel != mLastOutChannel
+                || inRate != mLastInRate
+                || outRate != mLastOutRate;
 
-//        if (mBuffer.size() == 0) {
-//            Logger.d("Resampling done for first chunk (" + resampledChunk.length + ")");
-//        }
+        if (needsNewResampler) {
+            ResamplerConfiguration configuration = new ResamplerConfiguration(ResamplerQuality.BEST, inChannel,
+                    inRate, outChannel, outRate);
+            mResampler = new Resampler(configuration);
+            mLastInChannel = inChannel;
+            mLastOutChannel = outChannel;
+            mLastInRate = inRate;
+            mLastOutRate = outRate;
+        }
+
+        byte[] resampledChunk = mResampler.resample(bufferChunk);
 
         onBufferChunkLoaded(resampledChunk);
     }
