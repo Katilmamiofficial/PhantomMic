@@ -70,14 +70,29 @@ void  stop_hook(void* thiz) {
     g_phantomBridge->unload(env);
 }
 
-// Android 13+ (Android 16 dahil) ABI: callback artık TEK bir wp<> referansı
-// (eskiden iki ayrı ham pointer: callback_ptr, callback_refs)
 int32_t (*set_backup)(void* thiz, int32_t inputSource, uint32_t sampleRate, uint32_t format,
                       uint32_t channelMask, size_t frameCount, void* callback_wp_ref,
                       uint32_t notificationFrames, bool threadCanCallJava, int32_t sessionId,
                       int transferType, uint32_t flags, uint32_t uid, int32_t pid, void* pAttributes,
                       int selectedDeviceId, int selectedMicDirection, float microphoneFieldDimension,
                       int32_t maxSharedAudioHistoryMs);
+
+int32_t (*set_backup_legacy)(void* thiz, int32_t inputSource, uint32_t sampleRate, uint32_t format,
+                      uint32_t channelMask, size_t frameCount, void* callback_ptr, void* callback_refs,
+                      uint32_t notificationFrames, bool threadCanCallJava, int32_t sessionId,
+                      int transferType, uint32_t flags, uint32_t uid, int32_t pid, void* pAttributes,
+                      int selectedDeviceId, int selectedMicDirection, float microphoneFieldDimension,
+                      int32_t maxSharedAudioHistoryMs);
+
+static void on_set_called(int32_t result, uint32_t sampleRate, uint32_t format, uint32_t channelMask) {
+    LOGI("AudioRecord::set(...): %d", result);
+
+    JNIEnv* env;
+    JVM->AttachCurrentThread(&env, nullptr);
+    g_phantomBridge->update_audio_format(env, sampleRate, format, channelMask);
+    g_phantomBridge->load(env);
+}
+
 int32_t set_hook(void* thiz, int32_t inputSource, uint32_t sampleRate, uint32_t format,
                  uint32_t channelMask, size_t frameCount, void* callback_wp_ref,
                  uint32_t notificationFrames, bool threadCanCallJava, int32_t sessionId,
@@ -91,13 +106,24 @@ int32_t set_hook(void* thiz, int32_t inputSource, uint32_t sampleRate, uint32_t 
                                 selectedDeviceId, selectedMicDirection, microphoneFieldDimension,
                                 maxSharedAudioHistoryMs);
 
-    LOGI("AudioRecord::set(...): %d", result);
+    on_set_called(result, sampleRate, format, channelMask);
+    return result;
+}
 
-    JNIEnv* env;
-    JVM->AttachCurrentThread(&env, nullptr);
-    g_phantomBridge->update_audio_format(env, sampleRate, format, channelMask);
-    g_phantomBridge->load(env);
+int32_t set_hook_legacy(void* thiz, int32_t inputSource, uint32_t sampleRate, uint32_t format,
+                 uint32_t channelMask, size_t frameCount, void* callback_ptr, void* callback_refs,
+                 uint32_t notificationFrames, bool threadCanCallJava, int32_t sessionId,
+                 int transferType, uint32_t flags, uint32_t uid, int32_t pid, void* pAttributes,
+                 int selectedDeviceId, int selectedMicDirection, float microphoneFieldDimension,
+                 int32_t maxSharedAudioHistoryMs) {
 
+    int32_t result = set_backup_legacy(thiz, inputSource, sampleRate, format, channelMask, frameCount,
+                                callback_ptr, callback_refs, notificationFrames, threadCanCallJava,
+                                sessionId, transferType, flags, uid, pid, pAttributes,
+                                selectedDeviceId, selectedMicDirection, microphoneFieldDimension,
+                                maxSharedAudioHistoryMs);
+
+    on_set_called(result, sampleRate, format, channelMask);
     return result;
 }
 
@@ -143,7 +169,14 @@ Java_tn_amin_phantom_1mic_PhantomManager_nativeHook(JNIEnv *env, jobject thiz) {
 
     hook_func((void*) obtainBuffer_symbol, (void*) obtainBuffer_hook, (void**) &obtainBuffer_backup);
     hook_func((void*) stop_symbol, (void*) stop_hook, (void**) &stop_backup);
-    hook_func((void*) set_symbol, (void*) set_hook, (void**) &set_backup);
+    
+    if (get_sdk_int() >= 33 /* Android 13 (Tiramisu) */) {
+        LOGI("Using modern (Android 13+) AudioRecord::set ABI");
+        hook_func((void*) set_symbol, (void*) set_hook, (void**) &set_backup);
+    } else {
+        LOGI("Using legacy (pre-Android 13) AudioRecord::set ABI");
+        hook_func((void*) set_symbol, (void*) set_hook_legacy, (void**) &set_backup_legacy);
+    }
 }
 
 extern "C"
